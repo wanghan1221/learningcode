@@ -1,0 +1,107 @@
+watermelon<-read.csv("C:\\Users\\lenovo\\Desktop\\r小代码\\machine-learning\\watermelon.csv",stringsAsFactors = F)
+fit<-glm(good~.,data=watermelon,family='binomial')
+summary(fit)
+library(tictoc)
+#gradient_n是梯度下降法需要设置的参数，即每次更新计算的损失函数的样本量
+computing<-function(x,y,method,step=0.01,gradient_n=1,error=1e-14){
+  y<-as.matrix(y)
+  n<-nrow(y)
+  x<-as.matrix(cbind(rep(1,n),x))
+  m<-ncol(x)
+  beta<-as.matrix(rep(1,m))
+  iter<-0#迭代次数
+  while(TRUE){
+    new_error<-0
+    iter<-iter+1 
+    if(method=="Newton"){
+      p=exp(x%*%beta)/(1+exp(x%*%beta))
+      loglikelihood<--t(y)%*%log(p)-(t(1-y))%*%log(1-p)
+      des<--t(x)%*%(y-p)
+      #海塞矩阵行列式为0，故取其对角线元素
+      hessian<-diag(diag(p%*%t(1-p)))
+      step=t(x)%*%hessian%*%x
+      newbeta<-beta-solve(step)%*%des
+      newp=exp(x%*%newbeta)/(1+exp(x%*%newbeta))
+      newloglikelihood<--t(y)%*%log(newp)-(t(1-y))%*%log(1-newp)
+      new_error<-loglikelihood-newloglikelihood
+      beta<-newbeta
+    }else if(method=="Gradient" &gradient_n==n){#可以分为批量梯度下降、小批量梯度下降、随机梯度下降
+      p=exp(x%*%beta)/(1+exp(x%*%beta))
+      loglikelihood<--t(y)%*%log(p)-(t(1-y))%*%log(1-p)
+      des<--t(x)%*%(y-p)
+      newbeta=beta-step*des
+      newp=exp(x%*%newbeta)/(1+exp(x%*%newbeta))
+      newloglikelihood<--t(y)%*%log(newp)-(t(1-y))%*%log(1-newp)
+      new_error<-loglikelihood-newloglikelihood
+      beta<-newbeta
+    }else if(method=="Gradient" &gradient_n<n){
+      #gradient_n=1,随机梯度下降;
+      #1<gradient_n<n,批量梯度下降
+      #更新beta时只选取抽样出的样本点，但计算迭代前后损失函数差值用所有样本点
+      sample_id<-sample(1:n,gradient_n,replace=F)
+      x_sample<-matrix(x[sample_id,],nrow=gradient_n)
+      y_sample<-matrix(y[sample_id,],nrow=gradient_n)
+      p=exp(x%*%beta)/(1+exp(x%*%beta))
+      loglikelihood<--t(y)%*%log(p)-(t(1-y))%*%log(1-p)
+      des<--t(x_sample)%*%(y_sample-p[sample_id])
+      newbeta=beta-step*des
+      newp=exp(x%*%newbeta)/(1+exp(x%*%newbeta))
+      newloglikelihood<--t(y)%*%log(newp)-(t(1-y))%*%log(1-newp)
+      new_error<-loglikelihood-newloglikelihood
+      beta<-newbeta
+    }
+    if(abs(new_error)<error){
+        break
+      }
+  }
+  result<-list(beta,iter,new_error) 
+  return(result)
+}
+
+x<-watermelon[,1:2]
+y<-watermelon[,3]
+#牛顿下降法,耗时0.93sec
+tic()
+computing(x,y,method="Newton",step=0.001)
+toc()
+#梯度下降法,耗时23.59sec
+tic()
+computing(x,y,method="Gradient",step=0.001,gradient_n = 16)
+toc()
+#随机梯度下降法，结果不好
+tic()
+computing(x,y,method="Gradient",step=0.001,gradient_n = 1)
+toc()
+#-------------------------------------part2 坐标下降法-----------------------------------------
+x<-as.matrix(watermelon[,1:2],nrow=16)
+y<-as.matrix(watermelon[,3],ncol=1)
+coordinate_fun<-function(x,y,threshold){
+   n<-nrow(x)
+   x<-cbind(rep(1,n),x)
+   m<-ncol(x)
+   beta<-matrix(0,nrow=m)
+   iter<-0
+   while (TRUE) {
+     for(i in 1:m){
+       iter<-iter+1
+       p=exp(x%*%beta)/(1+exp(x%*%beta))
+       loglikelihood<--t(y)%*%log(p)-(t(1-y))%*%log(1-p)
+       new_beta<-beta
+       new_beta[i,1]<-beta[i,1]+t(x[,i])%*%(y-exp(x%*%beta)/(1+exp(x%*%beta)))
+       newp=exp(x%*%new_beta)/(1+exp(x%*%new_beta))
+       new_loglikelihood<--t(y)%*%log(newp)-(t(1-y))%*%log(1-newp)
+       error<-new_loglikelihood-loglikelihood
+       if(abs(error)<threshold){
+         break
+       }
+     }
+     if(abs(error)<threshold){
+       break
+     }else{
+       beta<-new_beta
+       iter<iter
+     }
+   }
+   return(list(new_beta,iter,error))
+}
+coordinate_fun(x,y,threshold=1e-14)

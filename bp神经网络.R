@@ -1,0 +1,191 @@
+library(tictoc)
+dataset<-read.csv("C:\\Users\\lenovo\\Desktop\\r小代码\\machine-learning\\table4.3.csv",stringsAsFactors=F)
+#----------------------------------part1 对分类数据哑变量处理---------------------------------
+dataset$好瓜<-ifelse(dataset$好瓜=="是",1,0)
+data<-cbind(model.matrix(~.,dataset[,-9])[,-1],dataset$好瓜)
+
+#-----------------------------------part2 标准BP算法------------------------------------------
+#d个输入神经元，q个隐层神经元，1个输出神经元
+#单隐层
+#隐层阈值gama，q个；输出层阈值theta，l个
+neural_network_stand<-function(data,q,l=1,rate){
+  d<-ncol(data)-1
+  y<-data[,ncol(data)]
+  #step1:在（0，1）范围内随机初始化所有连接权和阈值
+  #输入层与隐层的权重
+  v<-matrix(runif(d*q),nrow=d,ncol=q)
+  #隐层阈值
+  gama<-matrix(runif(q),nrow=1)
+  #隐层与输出层权重
+  w<-matrix(runif(q*l),nrow=q)
+  #输出层阈值
+  theta<-matrix(runif(l),nrow=1)
+  #step2:开始迭代
+  m<-nrow(data)
+  iter<-0#迭代次数
+  old_error<-0#前一次迭代的累积误差
+  same_num<-0#同样的累计误差累积次数
+  while(TRUE){
+    new_error<-0#当前迭代累积误差
+    iter<-iter+1
+    y_pre<-NULL
+    for(i in 1:m){
+      x<-data[i,-ncol(data)]
+      #隐层输出值
+      b<-1/(1+exp(gama-x%*%v))
+      #根据当前参数计算y的输出y_hat
+      y_hat<-1/(1+exp(theta-b%*%w))
+      y_pre<-c(y_pre,y_hat)
+      this_error<-((y[i]-y_hat)^2)/2
+      new_error<-new_error+this_error
+      #计算输出层神经元梯度项g
+      g<-(y[i]-y_hat)%*%t(1-y_hat)%*%y_hat
+      #计算隐层神经元梯度项e
+      e<-b%*%t(1-b)%*%g%*%t(w)
+      #更新连接权和阈值
+      w<-w+rate*t(b)%*%g
+      theta<-theta-rate*g
+      v<-v+rate*matrix(x,ncol=1)%*%e
+      gama<-gama-rate*e
+    }
+    if(abs(old_error-new_error)<0.001){
+      same_num<-same_num+1
+      if(same_num==100){
+        break
+      }
+    }else{
+      same_num<-0
+      old_error<-new_error
+    }
+  }
+  result<-list(y_pre,w,theta,v,gama)
+  names(result)<-c("y_pre","w","theta","v","gama")
+  return(result)
+}
+
+tic()
+neural_network_stand(data,5,l=1,0.1)
+toc()
+#-------------------------------------part3 累积BP算法---------------------------------------
+neural_network_cum<-function(data,q,l=1,rate){
+  d<-ncol(data)-1
+  y<-data[,ncol(data)]
+  m<-nrow(data)
+  #step1:在（0，1）范围内随机初始化所有连接权和阈值
+  #输入层与隐层的权重
+  v<-matrix(runif(d*q),nrow=d,ncol=q)
+  #隐层阈值
+  gama<-matrix(runif(m*q),nrow=m)
+  #隐层与输出层权重
+  w<-matrix(runif(q*l),nrow=q)
+  #输出层阈值
+  theta<-matrix(runif(m*l),nrow=m)
+  #step2:开始迭代
+  iter<-0#迭代次数
+  old_error<-0#前一次迭代的累积误差
+  same_num<-0#同样的累计误差累积次数
+  while(TRUE){
+    new_error<-0#当前迭代累积误差
+    iter<-iter+1
+    x<-data[,-ncol(data)]
+    #隐层输出值
+    b<-1/(1+exp(gama-x%*%v))
+    #根据当前参数计算y的输出y_hat
+    y_hat<-1/(1+exp(theta-b%*%w))
+    new_error<-sum((y-y_hat)^2)/2
+    #计算输出层神经元梯度项g
+    g<-(y-y_hat)%*%t(1-y_hat)%*%y_hat
+    #计算隐层神经元梯度项e
+    e<-b%*%t(1-b)%*%g%*%t(w)
+    #更新连接权和阈值
+    w<-w+rate*t(b)%*%g
+    theta<-theta-rate*g
+    v<-v+rate*t(x)%*%e
+    gama<-gama-rate*e
+    
+    if(abs(old_error-new_error)<0.001){
+      same_num<-same_num+1
+      if(same_num==100){
+        break
+      }
+    }else{
+      same_num<-0
+      old_error<-new_error
+    }
+  }
+  result<-list(y_hat,w,theta,v,gama)
+  names(result)<-c("y_pre","w","theta","v","gama")
+  return(result)
+}
+
+tic()
+neural_network_cum(data,5,l=1,0.1)
+toc()
+#--------------------------------part4 模拟计算预测精确度-------------------------------------
+#随机生成一组数和相应系数，利用logistic回归判别其分类，这里有两种判断方式：
+#第一种：设一个阈值如0.5，超过则为1，不超过则为0
+#第二种：计算出其为1的概率p，然后基于p的二项分布随机生成0或者1
+
+#n样本量，d变量数，class_method判断y为1/0的方法，BP_method为BP神经网络算法,split_rate训练集所占比例
+#beta服从均匀分布，x的值服从正态分布
+validation_fun<-function(n,d,class_method,BP_method,split_rate,q,l,rate){
+  #生成x
+  x<-matrix(nrow=n,ncol=d)
+  for(i in 1:d){
+    x[,i]<-rnorm(n,mean=0,sd=1)
+  }
+  x<-cbind(rep(1,n),x)
+  #生成beta
+  beta<-runif((d+1),min=0,max=1)
+  p<-exp(x%*%beta)/(1+exp(x%*%beta))
+  #生成y
+  if(class_method==1){
+    y<-ifelse(p>=0.5,1,0)
+  }else if (class_method==2){
+    y<-vector(length=n)
+    for(i in 1:n){
+      y[i]<-rbinom(1,1,p[i])
+    }
+  }
+  #BP神经网络预测出y
+  data<-cbind(x,y)
+  id<-sample(1:n,n*split_rate)
+  train_data<-data[id,]
+  valid_data<-data[-id,]
+  if(BP_method=="standard"){
+    result<-neural_network_stand(train_data,q=q,l=l,rate=rate)
+    w<-result$w
+    theta<-result$theta
+    v<-result$v
+    gama<-result$gama
+    y_hat<-NULL
+    for(i in 1:nrow(valid_data)){
+    b<-1/(1+exp(gama-valid_data[i,1:(d+1)]%*%v))
+    #根据当前参数计算y的输出y_hat
+    y_hat[i]<-1/(1+exp(theta-b%*%w))
+    }
+  }else if(BP_method=="cumlative"){
+    result<-neural_network_cum(train_data,q=q,l=l,rate=rate)
+    w<-result$w
+    theta<-result$theta
+    v<-result$v
+    gama<-result$gama
+    b<-1/(1+exp(gama-valid_data[,1:(d+1)]%*%v))
+    #根据当前参数计算y的输出y_hat
+    y_hat<-1/(1+exp(theta-b%*%w))
+  }
+  y_pre<-ifelse(y_hat>=0.5,1,0)
+  compare<-as.data.frame(table(valid_data[,ncol(valid_data)],y_pre))
+  precision<-(compare[1,3]+compare[4,3])/n
+  sensity<-compare[4,3]/(compare[4,3]+compare[2,3])
+  specificity<-compare[1,3]/(compare[1,3]+compare[3,3])
+  return(list(precision,sensity,specificity))
+}
+validation_fun(100,5,class_method=1,BP_method="standard",q=5,l=1,rate=0.01,split_rate = 0.5)
+
+##与bp神经网络包比较
+library(neuralnet)
+net<-neuralnet(y~V1+V2+V3+V4+V5+V6+V7,data=train_data,hidden=5)
+net_result<-compute(net,as.data.frame(valid_data[,1:7]))
+y_pre<-ifelse(net_result$net.result>=0.5,1,0)
+table(valid_data[,8],y_pre)
